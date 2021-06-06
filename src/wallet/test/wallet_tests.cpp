@@ -38,7 +38,7 @@ static_assert(WALLET_INCREMENTAL_RELAY_FEE >= DEFAULT_INCREMENTAL_RELAY_FEE, "wa
 
 BOOST_FIXTURE_TEST_SUITE(wallet_tests, WalletTestingSetup)
 
-static std::shared_ptr<CWallet> TestLoadWallet(interfaces::Chain& chain)
+static std::shared_ptr<CWallet> TestLoadWallet(interfaces::Chain* chain)
 {
     DatabaseOptions options;
     DatabaseStatus status;
@@ -46,7 +46,9 @@ static std::shared_ptr<CWallet> TestLoadWallet(interfaces::Chain& chain)
     std::vector<bilingual_str> warnings;
     auto database = MakeWalletDatabase("", options, status, error);
     auto wallet = CWallet::Create(chain, "", std::move(database), options.create_flags, error, warnings);
-    wallet->postInitProcess();
+    if (chain) {
+        wallet->postInitProcess();
+    }
     return wallet;
 }
 
@@ -251,7 +253,7 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup)
     SetMockTime(KEY_TIME);
     m_coinbase_txns.emplace_back(CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey())).vtx[0]);
 
-    std::string backup_file = (GetDataDir() / "wallet.backup").string();
+    std::string backup_file = (gArgs.GetDataDirNet() / "wallet.backup").string();
 
     // Import key into wallet and call dumpwallet to create backup file.
     {
@@ -383,11 +385,11 @@ BOOST_AUTO_TEST_CASE(LoadReceiveRequests)
     CTxDestination dest = PKHash();
     LOCK(m_wallet.cs_wallet);
     WalletBatch batch{m_wallet.GetDatabase()};
-    m_wallet.AddDestData(batch, dest, "misc", "val_misc");
-    m_wallet.AddDestData(batch, dest, "rr0", "val_rr0");
-    m_wallet.AddDestData(batch, dest, "rr1", "val_rr1");
+    m_wallet.SetAddressUsed(batch, dest, true);
+    m_wallet.SetAddressReceiveRequest(batch, dest, "0", "val_rr0");
+    m_wallet.SetAddressReceiveRequest(batch, dest, "1", "val_rr1");
 
-    auto values = m_wallet.GetDestValues("rr");
+    auto values = m_wallet.GetAddressReceiveRequests();
     BOOST_CHECK_EQUAL(values.size(), 2U);
     BOOST_CHECK_EQUAL(values[0], "val_rr0");
     BOOST_CHECK_EQUAL(values[1], "val_rr1");
@@ -483,8 +485,7 @@ public:
             LOCK2(wallet->cs_wallet, ::cs_main);
             wallet->SetLastBlockProcessed(::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash());
         }
-        bool firstRun;
-        wallet->LoadWallet(firstRun);
+        wallet->LoadWallet();
         AddKey(*wallet, coinbaseKey);
         WalletRescanReserver reserver(*wallet);
         reserver.reserve();
@@ -690,7 +691,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
 {
     gArgs.ForceSetArg("-unsafesqlitesync", "1");
     // Create new wallet with known key and unload it.
-    auto wallet = TestLoadWallet(*m_node.chain);
+    auto wallet = TestLoadWallet(m_node.chain.get());
     CKey key;
     key.MakeNewKey(true);
     AddKey(*wallet, key);
@@ -730,7 +731,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
 
     // Reload wallet and make sure new transactions are detected despite events
     // being blocked
-    wallet = TestLoadWallet(*m_node.chain);
+    wallet = TestLoadWallet(m_node.chain.get());
     BOOST_CHECK(rescan_completed);
     BOOST_CHECK_EQUAL(addtx_count, 2);
     {
@@ -770,7 +771,7 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
             ENTER_CRITICAL_SECTION(wallet->wallet()->cs_wallet);
             ENTER_CRITICAL_SECTION(cs_wallets);
         });
-    wallet = TestLoadWallet(*m_node.chain);
+    wallet = TestLoadWallet(m_node.chain.get());
     BOOST_CHECK_EQUAL(addtx_count, 4);
     {
         LOCK(wallet->cs_wallet);
@@ -782,10 +783,17 @@ BOOST_FIXTURE_TEST_CASE(CreateWallet, TestChain100Setup)
     TestUnloadWallet(std::move(wallet));
 }
 
+BOOST_FIXTURE_TEST_CASE(CreateWalletWithoutChain, BasicTestingSetup)
+{
+    auto wallet = TestLoadWallet(nullptr);
+    BOOST_CHECK(wallet);
+    UnloadWallet(std::move(wallet));
+}
+
 BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
 {
     gArgs.ForceSetArg("-unsafesqlitesync", "1");
-    auto wallet = TestLoadWallet(*m_node.chain);
+    auto wallet = TestLoadWallet(m_node.chain.get());
     CKey key;
     key.MakeNewKey(true);
     AddKey(*wallet, key);
