@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2014-2020 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the RBF code."""
 
 from decimal import Decimal
 
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut
 from test_framework.script import CScript, OP_DROP
 from test_framework.test_framework import BitcoinTestFramework
@@ -27,18 +28,13 @@ def make_utxo(node, amount, confirmed=True, scriptPubKey=DUMMY_P2WPKH_SCRIPT):
     """
     fee = 1*COIN
     while node.getbalance() < satoshi_round((amount + fee)/COIN):
-        node.generate(100)
+        node.generate(COINBASE_MATURITY)
 
     new_addr = node.getnewaddress()
     txid = node.sendtoaddress(new_addr, satoshi_round((amount+fee)/COIN))
     tx1 = node.getrawtransaction(txid, 1)
     txid = int(txid, 16)
-    i = None
-
-    for i, txout in enumerate(tx1['vout']):
-        if txout['scriptPubKey']['addresses'] == [new_addr]:
-            break
-    assert i is not None
+    i, _ = next(filter(lambda vout: new_addr == vout[1]['scriptPubKey']['address'], enumerate(tx1['vout'])))
 
     tx2 = CTransaction()
     tx2.vin = [CTxIn(COutPoint(txid, i))]
@@ -376,7 +372,7 @@ class ReplaceByFeeTest(BitcoinTestFramework):
         split_value = int((initial_nValue-fee)/(MAX_REPLACEMENT_LIMIT+1))
 
         outputs = []
-        for i in range(MAX_REPLACEMENT_LIMIT+1):
+        for _ in range(MAX_REPLACEMENT_LIMIT+1):
             outputs.append(CTxOut(split_value, CScript([1])))
 
         splitting_tx = CTransaction()

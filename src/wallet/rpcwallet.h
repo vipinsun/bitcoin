@@ -7,6 +7,7 @@
 
 #include <span.h>
 
+#include <any>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,11 +31,10 @@ Span<const CRPCCommand> GetWalletRPCCommands();
  */
 std::shared_ptr<CWallet> GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
 
-void EnsureWalletIsUnlocked(const CWallet*);
-bool EnsureWalletIsAvailable(const CWallet*, bool avoidException);
-WalletContext& EnsureWalletContext(const util::Ref& context);
+void EnsureWalletIsUnlocked(const CWallet&);
+WalletContext& EnsureWalletContext(const std::any& context);
 LegacyScriptPubKeyMan& EnsureLegacyScriptPubKeyMan(CWallet& wallet, bool also_create = false);
 
-UniValue getaddressinfo(const JSONRPCRequest& request);
-UniValue signrawtransactionwithwallet(const JSONRPCRequest& request);
+RPCHelpMan getaddressinfo();
+RPCHelpMan signrawtransactionwithwallet();
 #endif //BITCOIN_WALLET_RPCWALLET_H
